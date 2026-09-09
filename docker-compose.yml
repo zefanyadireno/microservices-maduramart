@@ -1,60 +1,30 @@
+version: '3.8'
+
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: nusantara-mysql
-    restart: unless-stopped
+  order-db:
+    image: postgres:15-alpine
+    container_name: maduramart-order-db
+    restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_secret
-      MYSQL_DATABASE: nusantara_db
-      MYSQL_USER: nusantara_user
-      MYSQL_PASSWORD: nusantara_secret
+      POSTGRES_DB: order_service_db
+      POSTGRES_USER: order_admin
+      POSTGRES_PASSWORD: order_secret_pass
     ports:
-      - "3306:3306"
+      - "5433:5432"
     volumes:
-      - ./db.sql:/docker-entrypoint-initdb.d/01-db.sql:ro
-      - ./seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
-      - mysql_data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password
+      - order_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_secret"]
+      test: ["CMD-SHELL", "pg_isready -U order_admin -d order_service_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 15s
+      retries: 5
+    networks:
+      - supermart-network
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: nusantara-backend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: nusantara_db
-      MYSQL_USER: nusantara_user
-      MYSQL_PASSWORD: nusantara_secret
-      APP_PORT: 3000
-      APP_ENV: production
-      JWT_SECRET: supermart-secret-key-for-nusantara-course-2026
-      JWT_EXPIRY: 24h
-      CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000"
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: nusantara-frontend
-    restart: unless-stopped
-    ports:
-      - "4200:80"
-    depends_on:
-      - backend
+networks:
+  supermart-network:
+    driver: bridge
+    name: supermart-isolated-net
 
 volumes:
-  mysql_data:
+  order_db_data:
