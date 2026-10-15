@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package maduramart.catalog.v1;
+
+option go_package = "github.com/zefanyadireno/microservices-maduramart/proto/catalog/v1;catalogv1";
+
+service CatalogService {
+  rpc GetCatalogItem (GetCatalogItemRequest) returns (GetCatalogItemResponse);
+  rpc BatchGetCatalogItems (BatchGetCatalogItemsRequest) returns (BatchGetCatalogItemsResponse);
+}
+
+message Money {
+  string currency_code = 1;
+  int64 amount = 2;
+}
+
+message CatalogItem {
+  string product_id = 1;
+  string sku = 2;
+  string name = 3;
+  Money price = 4;
+  bool is_active = 5;
+}
+
+message GetCatalogItemRequest {
+  string product_id = 1;
+}
+
+message GetCatalogItemResponse {
+  CatalogItem item = 1;
+}
+
+message BatchGetCatalogItemsRequest {
+  repeated string product_ids = 1;
+}
+
+message BatchGetCatalogItemsResponse {
+  repeated CatalogItem items = 1;
+}
