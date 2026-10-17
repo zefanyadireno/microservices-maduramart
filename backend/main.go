@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
+	"google.golang.org/grpc"
 
 	"github.com/nusantara-supermart/backend/internal/auth"
 	"github.com/nusantara-supermart/backend/internal/catalog"
@@ -25,14 +28,52 @@ import (
 	"github.com/nusantara-supermart/backend/pkg/database"
 	"github.com/nusantara-supermart/backend/pkg/middleware"
 	"github.com/nusantara-supermart/backend/pkg/response"
+	pb "github.com/nusantara-supermart/backend/proto/catalog/v1"
 )
+
+type catalogGRPCHandler struct {
+	pb.UnimplementedCatalogServiceServer
+	catalogSvc catalog.Service
+}
+
+func (h *catalogGRPCHandler) GetCatalogItem(ctx context.Context, req *pb.GetCatalogItemRequest) (*pb.GetCatalogItemResponse, error) {
+	product, _, _, err := h.catalogSvc.GetProductByID(req.GetProductId())
+	if err != nil {
+		return nil, err
+	}
+
+	item := &pb.CatalogItem{
+		ProductId: req.GetProductId(),
+		Sku:       "",
+		Name:      "",
+		Price: &pb.Money{
+			CurrencyCode: "IDR",
+			Amount:       0,
+		},
+		IsActive: false,
+	}
+
+	if product != nil {
+		item.ProductId = product.ID
+		item.Sku = product.SKU
+		item.Name = product.Title
+		item.IsActive = product.IsPublished
+		item.Price = &pb.Money{
+			CurrencyCode: "IDR",
+			Amount:       int64(product.BasePrice),
+		}
+	}
+
+	return &pb.GetCatalogItemResponse{
+		Item: item,
+	}, nil
+}
 
 func main() {
 	cfg := config.LoadConfig()
 
 	log.Printf("Starting PT Nusantara SuperMart Monolith Backend in [%s] mode...", cfg.AppEnv)
 
-	// Database Connection
 	db, err := database.ConnectMySQL(cfg)
 	if err != nil {
 		log.Printf("WARNING: MySQL connection failed: %v", err)
@@ -47,15 +88,12 @@ func main() {
 		ServerHeader: "NusantaraSuperMart-Monolith",
 	})
 
-	// Global Middlewares
 	app.Use(logger.New())
 	app.Use(recover.New())
 	app.Use(middleware.SetupCORS(cfg))
 
-	// Base API Group
 	api := app.Group("/api/v1")
 
-	// Healthcheck
 	api.Get("/health", func(c fiber.Ctx) error {
 		dbStatus := "healthy"
 		if db == nil || db.Ping() != nil {
@@ -68,7 +106,6 @@ func main() {
 		})
 	})
 
-	// Domain Repositories
 	authRepo := auth.NewRepository(db)
 	catalogRepo := catalog.NewRepository(db)
 	inventoryRepo := inventory.NewRepository(db)
@@ -79,7 +116,6 @@ func main() {
 	procurementRepo := procurement.NewRepository(db)
 	supportRepo := support.NewRepository(db)
 
-	// Domain Services (Monolith cross-domain coupling)
 	authSvc := auth.NewService(authRepo, cfg)
 	catalogSvc := catalog.NewService(catalogRepo)
 	inventorySvc := inventory.NewService(inventoryRepo)
@@ -90,7 +126,6 @@ func main() {
 	procurementSvc := procurement.NewService(procurementRepo)
 	supportSvc := support.NewService(supportRepo)
 
-	// Domain Handlers
 	authHandler := auth.NewHandler(authSvc)
 	catalogHandler := catalog.NewHandler(catalogSvc)
 	inventoryHandler := inventory.NewHandler(inventorySvc)
@@ -101,7 +136,6 @@ func main() {
 	procurementHandler := procurement.NewHandler(procurementSvc)
 	supportHandler := support.NewHandler(supportSvc)
 
-	// Register Domain Routers
 	auth.RegisterRoutes(api, authHandler, cfg)
 	catalog.RegisterRoutes(api, catalogHandler, cfg)
 	inventory.RegisterRoutes(api, inventoryHandler, cfg)
@@ -112,13 +146,34 @@ func main() {
 	procurement.RegisterRoutes(api, procurementHandler, cfg)
 	support.RegisterRoutes(api, supportHandler, cfg)
 
-	// Graceful Shutdown Setup
+	// Inisialisasi gRPC Server
+	grpcServer := grpc.NewServer()
+	pb.RegisterCatalogServiceServer(grpcServer, &catalogGRPCHandler{catalogSvc: catalogSvc})
+
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "50051"
+	}
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
+	if err != nil {
+		log.Fatalf("Failed to listen for gRPC on port %s: %v", grpcPort, err)
+	}
+
+	go func() {
+		log.Printf("Nusantara SuperMart gRPC server listening on port :%s", grpcPort)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Printf("gRPC server error: %v", err)
+		}
+	}()
+
 	serverShutdown := make(chan os.Signal, 1)
 	signal.Notify(serverShutdown, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		<-serverShutdown
 		log.Println("Shutting down Nusantara SuperMart server gracefully...")
+		grpcServer.GracefulStop()
 		_ = app.Shutdown()
 	}()
 
