@@ -29,7 +29,8 @@ services:
     container_name: nusantara-backend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
+      - "50051:50051"
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -37,10 +38,11 @@ services:
       MYSQL_USER: nusantara_user
       MYSQL_PASSWORD: nusantara_secret
       APP_PORT: 3000
+      GRPC_PORT: 50051
       APP_ENV: production
       JWT_SECRET: supermart-secret-key-for-nusantara-course-2026
       JWT_EXPIRY: 24h
-      CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000"
+      CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000,http://localhost:3001"
     depends_on:
       mysql:
         condition: service_healthy
