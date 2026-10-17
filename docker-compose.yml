@@ -1,7 +1,9 @@
+version: '3.8'
+
 services:
   mysql:
     image: mysql:8.0
-    container_name: nusantara-mysql
+    container_name: maduramart-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root_secret
@@ -22,11 +24,27 @@ services:
       retries: 10
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Message Broker Service (RabbitMQ untuk Tugas 3)
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: maduramart-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # Port Komunikasi AMQP untuk Aplikasi Go
+      - "15672:15672"  # Port Management Dashboard Web
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: nusantara-backend
+    container_name: maduramart-backend
     restart: unless-stopped
     ports:
       - "3001:3000"
@@ -43,15 +61,18 @@ services:
       JWT_SECRET: supermart-secret-key-for-nusantara-course-2026
       JWT_EXPIRY: 24h
       CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:3000,http://localhost:3001"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     depends_on:
       mysql:
         condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: nusantara-frontend
+    container_name: maduramart-frontend
     restart: unless-stopped
     ports:
       - "4200:80"
@@ -60,3 +81,4 @@ services:
 
 volumes:
   mysql_data:
+  rabbitmq_data:
