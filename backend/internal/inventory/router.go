@@ -7,6 +7,11 @@ import (
 )
 
 func RegisterRoutes(router fiber.Router, handler *Handler, cfg *config.Config) {
+	// Endpoint publik untuk health check / testing k6 (tanpa auth)
+	router.Get("/health", func(c fiber.Ctx) error {
+		return c.Status(200).SendString("OK")
+	})
+
 	inventoryGroup := router.Group("/inventory")
 
 	authRequired := middleware.AuthRequired(cfg)
