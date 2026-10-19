@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func main() {
+func inspectPayload() {
 	// 1. Representasi data objek untuk REST (JSON)
 	restPayload := map[string]interface{}{
 		"item": map[string]interface{}{
